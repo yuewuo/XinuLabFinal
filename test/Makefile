@@ -1,2 +1,2 @@
 all: main.c ../blockchain.c
-	gcc main.c ../blockchain.c -I../ -o main
+	gcc main.c ../blockchain.c ../bc_packet.c -I../ -o main

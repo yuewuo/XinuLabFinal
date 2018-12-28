@@ -10,12 +10,12 @@ extern char bc_ip[32];
 #define BC_WANT_EXIT -2
 #define BC_UNKNOWN_CMD -3
 
-
 // this is blockchain.c implemented
 int bc_init(const char* ip);
 int bc_loop(void);  // call this like `while(bc_loop());`, this will check UDP packet and timeout
 int bc_input_char(char c);
 int bc_exit();
+int bc_input_packet(const char* buf, unsigned int len, unsigned int remip, unsigned short remport);
 #define bc_println(format, ...) do {bc_back();printf( format "\n", ##__VA_ARGS__);bc_forward();} while(0)
 
 // need to be implemented depends on platform

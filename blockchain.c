@@ -86,3 +86,13 @@ int bc_forward(void) {
 int bc_exit() {
     printf("\nblock chain exit...\n");
 }
+
+int bc_handle_packet(const char* str, unsigned int remip) {
+
+}
+
+int bc_input_packet(const char* buf, unsigned int len, unsigned int remip, unsigned short remport) {
+    
+    bc_back();
+    bc_forward();
+}
