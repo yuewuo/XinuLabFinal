@@ -20,13 +20,14 @@ int bc_init(const char* ip) {
 
 int bc_input_char(char c) {
     // printf("0x%02X\n", c);
+    int ret = 0;
     if (c == '\n') {
         putchar(c);
-        bc_handle_line();
+        ret = bc_handle_line();
         bc_linebuf_idx = 0;
         bc_linebuf[0] = '\0';
         bc_forward();
-    } else if (c >= 0x21 && c <= 0x7E) {  // 可见字符区间
+    } else if (c >= 0x21 && c <= 0x7E || c == ' ') {  // 可见字符区间
         if (bc_linebuf_idx < 0 || bc_linebuf_idx > BLOCKCHAIN_LINEBUF_LEN - 2)
             return BC_LINEBUF_OVERFLOW;  // buffer不够
         bc_linebuf[bc_linebuf_idx++] = c;
@@ -41,21 +42,36 @@ int bc_input_char(char c) {
     } else if (c == 0x1A) {
         // TODO 同上
     }
-    return 0;
+    return ret;
 }
 
 int bc_loop() {
-    int nowtime = bc_gettime_ms();
+    unsigned long long nowtime = bc_gettime_ms();
     if (nowtime - lasttime >= 1000) {  // 1s
         lasttime = nowtime;
-        bc_println("hahahha");
+        bc_println("1 second passed, now time is %llums", nowtime);
     }
     return 0;
 }
 
+#define iS_COMMAND(cmd) (strncmp(bc_linebuf, cmd, strlen(cmd)) == 0)
+#define EQUAL_CMD(cmd) (strcmp(bc_linebuf, cmd) == 0)
+#define EQUAL_CMD_PARA(bias, cmd) (strcmp(bc_linebuf + bias, cmd) == 0)
 int bc_handle_line(void) {
-    // TODO 解析bc_linebuf字符串
-    // printf("\b\b");
+    if (iS_COMMAND("show ")) {
+        if (EQUAL_CMD_PARA(5, "ip")) {
+            printf("ip: %s\n", bc_ip);
+        } else {
+            printf("error: don't known what to show, see \"help\"\n");
+        }
+    } else if (EQUAL_CMD("exit")) {
+        return BC_WANT_EXIT;
+    } else if (EQUAL_CMD("help")) {
+        printf("blockchain command instruction:\n");
+        printf("    show [ip]: print system ip\n");
+    } else {
+        printf("error: unknown command, try \"help\"\n");
+    }
     return 0;
 }
 
@@ -65,4 +81,8 @@ int bc_back(void) {
 
 int bc_forward(void) {
     printf("> %s", bc_linebuf);
+}
+
+int bc_exit() {
+    printf("\nblock chain exit...\n");
 }

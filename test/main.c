@@ -15,10 +15,15 @@
 #include <termios.h>
 #include <fcntl.h>
 #include <time.h>
-#include<sys/time.h>
+#include <sys/time.h>
+#include <sys/wait.h>
+#include <sys/types.h>
 
 int getselfIP(char* ip, int len);  // 返回第一个不是127.0.0.1的IP地址
 void setecho();  // 关闭回显。XINU默认不回显
+void recoverecho();  // 恢复回显
+void my_sigint(int signo);
+unsigned char loop_run;
 
 int main() {
     int sock_fd;
@@ -59,12 +64,16 @@ int main() {
     }
 
     bc_init(selfip);  // 初始化库函数
+    signal(SIGINT, my_sigint); 
 
     setecho();  // 取消linux自带终端IO控制，自定义控制
-    while (1) {
+    loop_run = 1;
+    while (loop_run) {
         char c = getchar();
-        if (c != EOF) bc_input_char(c);
-        // bc_println("haha");
+        if (c != EOF) {
+            int ret = bc_input_char(c);
+            if (ret == BC_WANT_EXIT) break;
+        }
 
         rcv_num = recvfrom(sock_fd, rcv_buff, sizeof(rcv_buff), 0, (struct sockaddr*)&client_addr, &client_len);
         if (rcv_num > 0) {
@@ -78,10 +87,16 @@ int main() {
         }
         bc_loop();
     }
-
+    recoverecho();
+    bc_exit();
     close(sock_fd);
 
+    printf("stop normally\n");
     return 0;
+}
+
+void my_sigint(int signo) {
+    loop_run = 0;
 }
 
 int getselfIP(char* ip, int len) {
@@ -103,12 +118,23 @@ int getselfIP(char* ip, int len) {
 }
 
 #define ECHOFLAGS (ECHO | ECHOE | ECHOK | ECHONL | ICANON) 
+struct termios oldterm;
+void recoverecho() {
+    if(tcsetattr(fileno(stdin), TCSANOW, &oldterm) != 0) {
+        perror("tcsetattr failed\n");
+        exit(-6);
+    }
+    int flags = fcntl(fileno(stdin), F_GETFL, 0);
+    flags &= ~O_NONBLOCK;
+    fcntl(fileno(stdin), F_SETFL, flags);
+}
 void setecho() {
     struct termios term;
     if(tcgetattr(fileno(stdin), &term) != 0){  
         perror("Cannot get the attribution of the terminal");  
         exit(-5);
     }
+    oldterm = term;
     term.c_lflag &= ~ECHOFLAGS;
     term.c_cc[VMIN] = 1;  // VMIN等待最小的字符数
     term.c_cc[VTIME] = 0;  // 等待的最小时间
