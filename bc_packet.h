@@ -10,6 +10,9 @@ typedef struct {
 #define BC_TYPE_CONFIRM_CONTRAST 4
 #define BC_TYPE_TRANSACTION_SUCCESS 5
 #define BC_TYPE_TRANSACTION_BOARDCAST 6
+// 用来发现桥接网络里的所有设备IP
+#define BC_TYPE_REQUEST_INFO 0x80
+#define BC_TYPE_REPLY_INFO 0x81
     unsigned char type;
     unsigned short padding;
 
@@ -19,6 +22,7 @@ typedef struct {
 } bc_packet_t;
 
 int bc_packet(unsigned char type, unsigned int sender, unsigned int receiver, unsigned int amount, bc_packet_t* packet);
-int bc_packet_parse(const char* msg, unsigned int length , bc_packet_t* packet);
+int bc_packet_parse(const unsigned char* msg, unsigned int length , bc_packet_t* packet);
+void bc_packet_print(bc_packet_t* packet);
 
 #endif

@@ -18,15 +18,16 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <errno.h>
 
-int getselfIP(char* ip, int len);  // 返回第一个不是127.0.0.1的IP地址
+int getselfIP(char* ip, int len, unsigned int *ipu);  // 返回第一个不是127.0.0.1的IP地址
 void setecho();  // 关闭回显。XINU默认不回显
 void recoverecho();  // 恢复回显
 void my_sigint(int signo);
 unsigned char loop_run;
+int sock_fd;
 
 int main() {
-    int sock_fd;
     struct sockaddr_in client_addr;
     struct sockaddr_in server_addr;
     int rcv_num = -1;
@@ -34,7 +35,8 @@ int main() {
     char rcv_buff[512];
 
     char selfip[32];
-    if (getselfIP(selfip, sizeof(selfip)) != 0) {
+    unsigned int selfipu;
+    if (getselfIP(selfip, sizeof(selfip), &selfipu) != 0) {
         perror("get self IP error\n");
         exit(1);
     }
@@ -63,19 +65,20 @@ int main() {
         exit(1);
     }
 
-    bc_init(selfip);  // 初始化库函数
+    bc_init(selfipu);  // 初始化库函数
     signal(SIGINT, my_sigint); 
 
     setecho();  // 取消linux自带终端IO控制，自定义控制
     loop_run = 1;
     while (loop_run) {
 
-        rcv_num = recvfrom(sock_fd, rcv_buff, sizeof(rcv_buff), 0, (struct sockaddr*)&client_addr, &client_len);
+        rcv_num = recvfrom(sock_fd, rcv_buff, sizeof(rcv_buff) - 1, 0, (struct sockaddr*)&client_addr, &client_len);
         if (rcv_num > 0) {
             rcv_buff[rcv_num] = '\0';
-            printf("%s %u says: %s\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), rcv_buff);
-        } else if (rcv_buff) {
-            
+            printf("%s %u: len=%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), rcv_num);
+            bc_input_packet(rcv_buff, rcv_num, client_addr.sin_addr.s_addr, client_addr.sin_port);
+        } else if (rcv_num == -1 && errno == EAGAIN) {
+            // do nothing
         } else {
             perror("recv error\n");
             break;
@@ -101,7 +104,7 @@ void my_sigint(int signo) {
     loop_run = 0;
 }
 
-int getselfIP(char* ip, int len) {
+int getselfIP(char* ip, int len, unsigned int *ipu) {
     struct ifaddrs * ifAddrStruct = NULL;
     if (getifaddrs(&ifAddrStruct) != 0) return -1;
     struct ifaddrs * iter = ifAddrStruct;
@@ -111,6 +114,7 @@ int getselfIP(char* ip, int len) {
             tmpip = ((struct sockaddr_in *)iter->ifa_addr)->sin_addr.s_addr;
             if (tmpip != 0x0100007F) {  // 不是127.0.0.1
                 // printf("0x%08X\n", tmpip);
+                *ipu = tmpip;
                 inet_ntop(AF_INET, &tmpip, ip, len);
                 return 0;
             }
@@ -157,4 +161,15 @@ unsigned long long bc_gettime_ms(void) {
         return stuTimeVal.tv_sec * 1000 + stuTimeVal.tv_usec / 1000;
     }
     return 0;  // failed, always return 0
+}
+
+int udp_sendpacket(char* buf, unsigned int length, unsigned int remip, unsigned short remport) {
+    printf("length = %u\n", length);
+    struct sockaddr_in addr;
+    memset(&addr,0,sizeof(struct sockaddr_in));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(remport);
+    addr.sin_addr.s_addr = remip;
+    ssize_t n = sendto(sock_fd, buf, length, 0, (struct sockaddr *)&addr, sizeof(addr));
+    return !(n == length);  // 成功返回0
 }
