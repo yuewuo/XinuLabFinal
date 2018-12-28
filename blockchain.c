@@ -5,6 +5,7 @@
 unsigned int bc_ip;
 char bc_linebuf[BLOCKCHAIN_LINEBUF_LEN];
 int bc_linebuf_idx;
+char bc_packetbuf[512];
 unsigned long long lasttime;
 fsm_self_t fsm_self;
 
@@ -81,7 +82,9 @@ int bc_handle_line(void) {
         fsm_self.amount = amount;
         bc_packet_t packet;
         bc_packet(BC_TYPE_START_TRANSACTION, bc_ip, ip, amount, &packet);
-        BC_SEND_PACKET(packet, ip);
+        unsigned int packet_len;
+        bc_packet_send(bc_packetbuf, &packet_len, &packet);
+        udp_sendpacket(bc_packetbuf, packet_len, ip, BLOCKCHAIN_PORT);
         fsm_self.status = SELF_STATUS_WAIT_FINISH;
     } else if (EQUAL_CMD("exit")) {
         return BC_WANT_EXIT;

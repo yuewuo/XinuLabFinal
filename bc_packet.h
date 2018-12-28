@@ -23,6 +23,7 @@ typedef struct {
 
 int bc_packet(unsigned char type, unsigned int sender, unsigned int receiver, unsigned int amount, bc_packet_t* packet);
 int bc_packet_parse(const unsigned char* msg, unsigned int length , bc_packet_t* packet);
+int bc_packet_send(unsigned char* buf, unsigned int* length , bc_packet_t* packet);
 void bc_packet_print(bc_packet_t* packet);
 
 #endif

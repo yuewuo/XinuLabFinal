@@ -24,7 +24,6 @@ int bc_input_packet(const char* buf, unsigned int len, unsigned int remip, unsig
 
 // need to be implemented depends on platform
 unsigned long long bc_gettime_ms(void);
-#define BC_SEND_PACKET(packet, ip) udp_sendpacket((char*)&packet, sizeof(packet), ip, BLOCKCHAIN_PORT)
 int udp_sendpacket(char* buf, unsigned int length, unsigned int remip, unsigned short remport);
 
 // 内部函数

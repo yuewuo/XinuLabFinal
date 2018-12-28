@@ -12,13 +12,19 @@ int bc_packet(unsigned char type, unsigned int sender, unsigned int receiver, un
 }
 
 int bc_packet_parse(const unsigned char* msg, unsigned int length , bc_packet_t* packet) {
-    printf("msg[0]: 0x%02X, length=%u, size=%lu\n", msg[0], length, sizeof(bc_packet_t));
+    // printf("msg[0]: 0x%02X, length=%u, size=%lu\n", msg[0], length, sizeof(bc_packet_t));
     if (length == sizeof(bc_packet_t) && msg[0] == BC_VERSION_1) {
         memcpy(packet, msg, sizeof(bc_packet_t));
         return 0;
     }
     // TODO 兼容其他实现，比如字符串？
     return -1;
+}
+
+int bc_packet_send(unsigned char* buf, unsigned int* length , bc_packet_t* packet) {
+    memcpy(buf, packet, sizeof(bc_packet_t));
+    *length = sizeof(bc_packet_t);
+    return 0;
 }
 
 void bc_packet_print(bc_packet_t* packet) {
