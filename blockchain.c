@@ -17,6 +17,8 @@ bc_peer_t bc_peers[BLOCKCHAIN_MAX_PEER];
 
 #define bc_warning() printf("\033[1;33mwarning:\033[0m ")
 #define bc_error() printf("\033[1;31merror:\033[0m ")
+#define bc_info() printf("\033[1;34minfo:\033[0m ")
+#define bc_debug() printf("\033[1;36mdebug:\033[0m ")
 
 int bc_init(unsigned int ip, unsigned int amount) {
     fsm_self.status = SELF_STATUS_IDLE;
@@ -169,7 +171,7 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
     int ret = bc_packet_parse(buf, len, &packet);
     // printf("ret = %d\n", ret);
     if (ret != 0) return BC_PACKET_DECODE_ERROR;
-    bc_packet_print(&packet);
+    bc_debug(); bc_packet_print(&packet);
     if (packet.type == BC_TYPE_START_TRANSACTION) {
         if (remip != packet.sender) {
             printf("warning: "); bc_printip(remip); printf(" want to start a transaction with sender ip = ");
@@ -183,6 +185,7 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
             bc_printip(packet.sender); printf(" , which might be a malicious attack! drop it\n");
             return BC_BAD_PACKET;
         }
+        bc_update_peer(remip, packet.amount);
         bc_packet_t packet;
         bc_packet(BC_TYPE_REPLY_INFO, bc_ip, remip, bc_amount, &packet);
         unsigned int packet_len;
@@ -202,19 +205,20 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
 }
 
 int bc_update_peer(unsigned int remip, unsigned int amount) {
+    bc_debug(); printf("amount = %u\n", amount);
     unsigned int i=0;
     for (; i<bc_peer_cnt; ++i) {
         if (bc_peers[i].ip == remip) {
-            if (bc_peers[bc_peer_cnt].money != amount) {
-                printf("warning: "); bc_printip(remip); printf(" change its money from recorded ");
-                bc_printamount(bc_peers[bc_peer_cnt].money); printf(" to "); bc_printamount(amount);
+            if (bc_peers[i].money != amount) {
+                bc_warning(); bc_printip(remip); printf(" change its money from recorded ");
+                bc_printamount(bc_peers[i].money); printf(" to "); bc_printamount(amount);
                 printf(", but still trust him? yes! trust him.\n");
-                bc_peers[bc_peer_cnt].money = amount;
+                bc_peers[i].money = amount;
             }
         }
     }
     if (i == bc_peer_cnt) {
-        printf("info: "); bc_printip(remip); printf(" join the peers table, with initial money $");
+        bc_info(); bc_printip(remip); printf(" join the peers table, with initial money $");
         bc_printamount(amount); printf("\n");
         bc_peers[bc_peer_cnt].ip = remip;
         bc_peers[bc_peer_cnt].money = amount;
