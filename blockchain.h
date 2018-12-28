@@ -63,8 +63,10 @@ void fsm_busy2idle(int idx);
 void fsm_idle2busy(int idx);
 
 typedef struct {
-
+    unsigned int ip;
+    unsigned int money;  // 只记录确定的钱数，即实际完成交易的钱数
 } bc_peer_t;
 extern bc_peer_t bc_peers[BLOCKCHAIN_MAX_PEER];
+unsigned int bc_peer_cnt;
 
 #endif

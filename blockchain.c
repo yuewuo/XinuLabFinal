@@ -15,6 +15,9 @@ unsigned int fsm_others_idle_cnt;
 fsm_other_t fsm_others[BLOCKCHAIN_MAX_TRANSACTION];
 bc_peer_t bc_peers[BLOCKCHAIN_MAX_PEER];
 
+#define bc_warning() printf("\033[1;33mwarning:\033[0m ")
+#define bc_error() printf("\033[1;31merror:\033[0m ")
+
 int bc_init(unsigned int ip, unsigned int amount) {
     fsm_self.status = SELF_STATUS_IDLE;
     bc_linebuf_idx = 0;
@@ -29,6 +32,7 @@ int bc_init(unsigned int ip, unsigned int amount) {
     }
     fsm_others_busy = -1;
     fsm_others_idle = 0;
+    bc_peer_cnt = 0;
     bc_amount = amount;
     // 向其他机器广播自己的消息，并接收回复
     bc_packet_t packet;
@@ -95,8 +99,14 @@ int bc_handle_line(void) {
     if (iS_COMMAND("show ")) {
         if (EQUAL_CMD_PARA(5, "ip")) {
             printf("ip: "); bc_printip(bc_ip); putchar('\n');
+        } else if (EQUAL_CMD_PARA(5, "peer")) {  // 打印已知的peer的信息
+            printf("got %u peers recorded:\n", bc_peer_cnt);
+            for (unsigned int i=0; i<bc_peer_cnt; ++i) {
+                printf("    "); bc_printip(bc_peers[i].ip); printf(": \033[1;34m$"); 
+                bc_printamount(bc_peers[i].money); printf("\033[0m\n");
+            }
         } else {
-            printf("error: don't known what to show, see \"help\"\n");
+            bc_error(); printf("don't known what to show, see \"help\"\n");
         }
     } else if (iS_COMMAND("send ")) {
         if (fsm_self.status != SELF_STATUS_IDLE) {  // 正在处理别的事务，不能发送
@@ -121,7 +131,7 @@ int bc_handle_line(void) {
         fsm_self.status = SELF_STATUS_WAIT_FINISH;
     } else if (EQUAL_CMD("cancel")) {
         if (fsm_self.status != SELF_STATUS_WAIT_FINISH) {
-            printf("error: nothing to cancel\n");
+            bc_error(); printf("nothing to cancel\n");
         } else {
             unsigned char* ptr = (unsigned char*)&fsm_self.receiver;
             printf("success: you canceled transaction with ");
@@ -135,7 +145,7 @@ int bc_handle_line(void) {
         printf("blockchain command instruction:\n");
         printf("    show [ip]: print system ip\n");
     } else {
-        printf("error: unknown command, try \"help\"\n");
+        bc_error(); printf("unknown command, try \"help\"\n");
     }
     return 0;
 }
@@ -152,6 +162,8 @@ int bc_exit() {
     printf("\nblock chain exit...\n");
 }
 
+
+int bc_update_peer(unsigned int remip, unsigned int amount);
 int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
     bc_packet_t packet;
     int ret = bc_packet_parse(buf, len, &packet);
@@ -178,13 +190,36 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
         udp_sendpacket(bc_packetbuf, packet_len, remip, BLOCKCHAIN_PORT);
     } else if (packet.type == BC_TYPE_REPLY_INFO) {  // 别的机器回复信息，记录在表格里面
         if (remip != packet.sender) {
-            printf("warning: "); bc_printip(remip); printf(" try to reply info declaring its IP as ");
+            bc_warning(); bc_printip(remip); printf(" try to reply info declaring its IP as ");
             bc_printip(packet.sender); printf(" , which might be a malicious attack! drop it\n");
             return BC_BAD_PACKET;
         }
+        // 添加到peers列表中
+        bc_update_peer(remip, packet.amount);
         // bc_packet_print(&packet);
     }
     return 0;
+}
+
+int bc_update_peer(unsigned int remip, unsigned int amount) {
+    unsigned int i=0;
+    for (; i<bc_peer_cnt; ++i) {
+        if (bc_peers[i].ip == remip) {
+            if (bc_peers[bc_peer_cnt].money != amount) {
+                printf("warning: "); bc_printip(remip); printf(" change its money from recorded ");
+                bc_printamount(bc_peers[bc_peer_cnt].money); printf(" to "); bc_printamount(amount);
+                printf(", but still trust him? yes! trust him.\n");
+                bc_peers[bc_peer_cnt].money = amount;
+            }
+        }
+    }
+    if (i == bc_peer_cnt) {
+        printf("info: "); bc_printip(remip); printf(" join the peers table, with initial money $");
+        bc_printamount(amount); printf("\n");
+        bc_peers[bc_peer_cnt].ip = remip;
+        bc_peers[bc_peer_cnt].money = amount;
+        ++bc_peer_cnt;
+    }
 }
 
 int bc_input_packet(const char* buf, unsigned int len, unsigned int remip, unsigned short remport) {
