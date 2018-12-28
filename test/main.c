@@ -49,8 +49,13 @@ int main() {
     }
 
     struct timeval timeout = { 0, 30000 };  // 30ms
-    if (setsockopt(sock_fd, SOL_SOCKET,SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout))) {
+    if (setsockopt(sock_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout))) {
         perror("set timeout failed\n");
+        exit(1);
+    }
+    const int opt=-1;
+    if (setsockopt(sock_fd, SOL_SOCKET, SO_BROADCAST, (char*)&opt, sizeof(opt))) {
+        perror("set broadcast failed\n");
         exit(1);
     }
     
@@ -75,7 +80,7 @@ int main() {
         rcv_num = recvfrom(sock_fd, rcv_buff, sizeof(rcv_buff) - 1, 0, (struct sockaddr*)&client_addr, &client_len);
         if (rcv_num > 0) {
             rcv_buff[rcv_num] = '\0';
-            printf("%s %u: len=%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), rcv_num);
+            // printf("%s %u: len=%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), rcv_num);
             bc_input_packet(rcv_buff, rcv_num, client_addr.sin_addr.s_addr, client_addr.sin_port);
         } else if (rcv_num == -1 && errno == EAGAIN) {
             // do nothing
@@ -164,7 +169,7 @@ unsigned long long bc_gettime_ms(void) {
 }
 
 int udp_sendpacket(char* buf, unsigned int length, unsigned int remip, unsigned short remport) {
-    printf("length = %u\n", length);
+    // printf("length = %u\n", length);
     struct sockaddr_in addr;
     memset(&addr,0,sizeof(struct sockaddr_in));
     addr.sin_family = AF_INET;

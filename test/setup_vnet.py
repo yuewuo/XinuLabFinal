@@ -11,6 +11,7 @@ netns = ["ns1", "ns2", "ns3", "ns4"]
 vethprefix = "veth_"  # such as "veth_ns1" and "veth_ns1peer"
 bridgename = "br1"
 ipcnt = 0  # first ip is 10.0.0.1
+defaultgw = "10.0.0.0"
 def getip():
     global ipcnt
     ipcnt += 1
@@ -66,6 +67,7 @@ def generate_network_env():
         getoutordie("sudo ip netns exec %s ip addr add local %s dev %s" % (ns, ip, veth))
         getoutordie("sudo ip netns exec %s ip link set %s up" % (ns, veth))
         getoutordie("sudo ip netns exec %s ip route add default via %s" % (ns, ip))
+        # getoutordie("sudo ip netns exec %s route add default gw %s" % (ns, ip))
         print("setting veth %s" % vethpeer)
         getoutordie("sudo brctl addif %s %s" % (bridgename, vethpeer))
         getoutordie("sudo ip link set %s up" % (vethpeer))

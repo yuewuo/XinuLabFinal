@@ -3,9 +3,13 @@
 
 #include "bc_packet.h"
 
-unsigned int bc_ip;
+extern unsigned int bc_ip;
+extern unsigned int bc_amount;
 #define BLOCKCHAIN_PORT 1024
 #define BLOCKCHAIN_LINEBUF_LEN 128
+#define BLOCKCHAIN_MAX_TRANSACTION 16  // 同时进行的最多的transaction个数
+#define BLOCKCHAIN_OTHERS_TIMEOUT 1000  // 和其他人的交易，从建立之初，多少毫秒后交易失效
+#define BLOCKCHAIN_INIT_MONEY 10000  // 100元
 
 // 错误码定义
 #define BC_LINEBUF_OVERFLOW -1
@@ -13,6 +17,7 @@ unsigned int bc_ip;
 #define BC_UNKNOWN_CMD -3
 #define BC_PACKET_DECODE_ERROR -4
 #define BC_SELF_BUSY -5
+#define BC_BAD_PACKET -6
 
 // this is blockchain.c implemented
 int bc_init(unsigned int ip);
@@ -41,6 +46,20 @@ typedef struct {  // 仅作为交易发起方
 } fsm_self_t;
 extern fsm_self_t fsm_self;
 
-int bc_send_money(unsigned int receiver_ip, unsigned int amount);
+typedef struct {
+    unsigned char status;
+    short next;  // list point to next
+    short prev;
+    unsigned long long createtime;
+    unsigned int sender;
+    unsigned int receiver;
+    unsigned int amount;
+} fsm_other_t;
+extern fsm_other_t fsm_others[BLOCKCHAIN_MAX_TRANSACTION];
+extern unsigned int fsm_others_idle_cnt;
+extern short fsm_others_idle;
+extern short fsm_others_busy;
+void fsm_busy2idle(int idx);
+void fsm_idle2busy(int idx);
 
 #endif
