@@ -41,7 +41,7 @@ int main() {
         exit(1);
     }
 
-    struct timeval timeout = { 0, 100000 }; //100ms
+    struct timeval timeout = { 0, 10000 }; //10ms
     if (setsockopt(sock_fd, SOL_SOCKET,SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout))) {
         perror("set timeout failed\n");
         exit(1);
@@ -60,11 +60,11 @@ int main() {
 
     bc_init(selfip);  // 初始化库函数
 
-    setecho();  // 设置不回显
+    setecho();  // 取消linux自带终端IO控制，自定义控制
     while (1) {
         char c = getchar();
         if (c != EOF) bc_input_char(c);
-        bc_println("haha");
+        // bc_println("haha");
 
         rcv_num = recvfrom(sock_fd, rcv_buff, sizeof(rcv_buff), 0, (struct sockaddr*)&client_addr, &client_len);
         if (rcv_num > 0) {
@@ -76,6 +76,7 @@ int main() {
             perror("recv error\n");
             break;
         }
+        bc_loop();
     }
 
     close(sock_fd);
@@ -120,4 +121,12 @@ void setecho() {
     fcntl(fileno(stdin), F_SETFL, flags);  // 配置为非阻塞模式
 }
 
-
+unsigned long long bc_gettime_ms(void) {
+    struct timeval stuTimeVal;
+    memset(&stuTimeVal, 0, sizeof(struct timeval));
+    int ret = gettimeofday(&stuTimeVal,NULL);
+    if (ret == 0) {
+        return stuTimeVal.tv_sec * 1000 + stuTimeVal.tv_usec / 1000;
+    }
+    return 0;  // failed, always return 0
+}
