@@ -28,7 +28,7 @@ typedef struct {
 } bc_packet_t;
 ```
 
-使用version字节，如果大约`0x7F`一定不是ASCII字符，以此和字符串程序区分，后期考虑兼容ASCII程序
+使用version字节，如果大于`0x7F`一定不是ASCII字符，以此和字符串程序区分，后期考虑兼容字符串编码的程序
 
 ### 漏洞与攻击
 
