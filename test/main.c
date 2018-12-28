@@ -46,7 +46,7 @@ int main() {
         exit(1);
     }
 
-    struct timeval timeout = { 0, 10000 }; //10ms
+    struct timeval timeout = { 0, 30000 };  // 30ms
     if (setsockopt(sock_fd, SOL_SOCKET,SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout))) {
         perror("set timeout failed\n");
         exit(1);
@@ -69,11 +69,6 @@ int main() {
     setecho();  // 取消linux自带终端IO控制，自定义控制
     loop_run = 1;
     while (loop_run) {
-        char c = getchar();
-        if (c != EOF) {
-            int ret = bc_input_char(c);
-            if (ret == BC_WANT_EXIT) break;
-        }
 
         rcv_num = recvfrom(sock_fd, rcv_buff, sizeof(rcv_buff), 0, (struct sockaddr*)&client_addr, &client_len);
         if (rcv_num > 0) {
@@ -86,6 +81,13 @@ int main() {
             break;
         }
         bc_loop();
+
+        char c = getchar();
+        while (c != EOF) {
+            int ret = bc_input_char(c);
+            if (ret == BC_WANT_EXIT) { loop_run = 0; break; }
+            c = getchar();
+        }
     }
     recoverecho();
     bc_exit();
