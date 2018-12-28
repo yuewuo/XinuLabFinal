@@ -27,12 +27,22 @@ void my_sigint(int signo);
 unsigned char loop_run;
 int sock_fd;
 
-int main() {
+int main(int argc, char** argv) {
     struct sockaddr_in client_addr;
     struct sockaddr_in server_addr;
     int rcv_num = -1;
     int client_len;
     char rcv_buff[512];
+
+    if (argc != 2) {
+        printf("usage: ./main <initial money[float]>\n");
+        exit(0);
+    }
+    float initmoneyf;
+    unsigned int initmoney;
+    sscanf(argv[1], "%f", &initmoneyf);
+    initmoney = initmoneyf * 100;  // 转为整数处理
+    printf("initial money is \033[1;32m"); bc_printamount(initmoney); printf("\033[0m\n");
 
     char selfip[32];
     unsigned int selfipu;
@@ -70,7 +80,7 @@ int main() {
         exit(1);
     }
 
-    bc_init(selfipu);  // 初始化库函数
+    bc_init(selfipu, initmoney);  // 初始化库函数
     signal(SIGINT, my_sigint); 
 
     setecho();  // 取消linux自带终端IO控制，自定义控制
@@ -101,7 +111,8 @@ int main() {
     bc_exit();
     close(sock_fd);
 
-    printf("stop normally\n");
+    printf("stop normally with money remain = \033[1;32m"); bc_printamount(bc_amount);
+    printf("\033[0m\ntake this as input when next run! to keep a good record >.<\n");
     return 0;
 }
 

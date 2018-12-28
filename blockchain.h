@@ -9,7 +9,7 @@ extern unsigned int bc_amount;
 #define BLOCKCHAIN_LINEBUF_LEN 128
 #define BLOCKCHAIN_MAX_TRANSACTION 16  // 同时进行的最多的transaction个数
 #define BLOCKCHAIN_OTHERS_TIMEOUT 1000  // 和其他人的交易，从建立之初，多少毫秒后交易失效
-#define BLOCKCHAIN_INIT_MONEY 10000  // 100元
+#define BLOCKCHAIN_MAX_PEER 32  // 最多的对方个数，对于我们现在的班级是30个以下
 
 // 错误码定义
 #define BC_LINEBUF_OVERFLOW -1
@@ -20,7 +20,7 @@ extern unsigned int bc_amount;
 #define BC_BAD_PACKET -6
 
 // this is blockchain.c implemented
-int bc_init(unsigned int ip);
+int bc_init(unsigned int ip, unsigned int amount);
 int bc_loop(void);  // call this like `while(bc_loop());`, this will check UDP packet and timeout
 int bc_input_char(char c);
 int bc_exit();
@@ -61,5 +61,10 @@ extern short fsm_others_idle;
 extern short fsm_others_busy;
 void fsm_busy2idle(int idx);
 void fsm_idle2busy(int idx);
+
+typedef struct {
+
+} bc_peer_t;
+extern bc_peer_t bc_peers[BLOCKCHAIN_MAX_PEER];
 
 #endif

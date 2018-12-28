@@ -13,8 +13,9 @@ short fsm_others_idle;
 short fsm_others_busy;
 unsigned int fsm_others_idle_cnt;
 fsm_other_t fsm_others[BLOCKCHAIN_MAX_TRANSACTION];
+bc_peer_t bc_peers[BLOCKCHAIN_MAX_PEER];
 
-int bc_init(unsigned int ip) {
+int bc_init(unsigned int ip, unsigned int amount) {
     fsm_self.status = SELF_STATUS_IDLE;
     bc_linebuf_idx = 0;
     bc_linebuf[0] = '\0';
@@ -28,7 +29,7 @@ int bc_init(unsigned int ip) {
     }
     fsm_others_busy = -1;
     fsm_others_idle = 0;
-    bc_amount = BLOCKCHAIN_INIT_MONEY;
+    bc_amount = amount;
     // 向其他机器广播自己的消息，并接收回复
     bc_packet_t packet;
     bc_packet(BC_TYPE_REQUEST_INFO, bc_ip, 0xFFFFFFFF, bc_amount, &packet);
