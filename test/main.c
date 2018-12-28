@@ -27,12 +27,22 @@ void my_sigint(int signo);
 unsigned char loop_run;
 int sock_fd;
 
-int main() {
+int main(int argc, char** argv) {
     struct sockaddr_in client_addr;
     struct sockaddr_in server_addr;
     int rcv_num = -1;
     int client_len;
     char rcv_buff[512];
+
+    if (argc != 2) {
+        printf("usage: ./main <initial money[float]>\n");
+        exit(0);
+    }
+    float initmoneyf;
+    unsigned int initmoney;
+    sscanf(argv[1], "%f", &initmoneyf);
+    initmoney = initmoneyf * 100;  // 转为整数处理
+    printf("initial money is \033[1;32m"); bc_printamount(initmoney); printf("\033[0m\n");
 
     char selfip[32];
     unsigned int selfipu;
@@ -49,8 +59,13 @@ int main() {
     }
 
     struct timeval timeout = { 0, 30000 };  // 30ms
-    if (setsockopt(sock_fd, SOL_SOCKET,SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout))) {
+    if (setsockopt(sock_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout))) {
         perror("set timeout failed\n");
+        exit(1);
+    }
+    const int opt=-1;
+    if (setsockopt(sock_fd, SOL_SOCKET, SO_BROADCAST, (char*)&opt, sizeof(opt))) {
+        perror("set broadcast failed\n");
         exit(1);
     }
     
@@ -65,7 +80,7 @@ int main() {
         exit(1);
     }
 
-    bc_init(selfipu);  // 初始化库函数
+    bc_init(selfipu, initmoney);  // 初始化库函数
     signal(SIGINT, my_sigint); 
 
     setecho();  // 取消linux自带终端IO控制，自定义控制
@@ -75,7 +90,7 @@ int main() {
         rcv_num = recvfrom(sock_fd, rcv_buff, sizeof(rcv_buff) - 1, 0, (struct sockaddr*)&client_addr, &client_len);
         if (rcv_num > 0) {
             rcv_buff[rcv_num] = '\0';
-            printf("%s %u: len=%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), rcv_num);
+            // printf("%s %u: len=%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), rcv_num);
             bc_input_packet(rcv_buff, rcv_num, client_addr.sin_addr.s_addr, client_addr.sin_port);
         } else if (rcv_num == -1 && errno == EAGAIN) {
             // do nothing
@@ -96,7 +111,8 @@ int main() {
     bc_exit();
     close(sock_fd);
 
-    printf("stop normally\n");
+    printf("stop normally with money remain = \033[1;32m"); bc_printamount(bc_amount);
+    printf("\033[0m\ntake this as input when next run! to keep a good record >.<\n");
     return 0;
 }
 
@@ -164,7 +180,7 @@ unsigned long long bc_gettime_ms(void) {
 }
 
 int udp_sendpacket(char* buf, unsigned int length, unsigned int remip, unsigned short remport) {
-    printf("length = %u\n", length);
+    // printf("length = %u\n", length);
     struct sockaddr_in addr;
     memset(&addr,0,sizeof(struct sockaddr_in));
     addr.sin_family = AF_INET;

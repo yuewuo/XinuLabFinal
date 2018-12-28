@@ -28,10 +28,8 @@ int bc_packet_send(unsigned char* buf, unsigned int* length , bc_packet_t* packe
 }
 
 void bc_packet_print(bc_packet_t* packet) {
-    unsigned char* src = (unsigned char*)&packet->sender;
-    unsigned char* dst = (unsigned char*)&packet->receiver;
-    printf("from %hhu.%hhu.%hhu.%hhu ", src[0], src[1], src[2], src[3]);
-    printf("to %hhu.%hhu.%hhu.%hhu ", dst[0], dst[1], dst[2], dst[3]);
+    printf("from "); bc_printip(packet->sender);
+    printf(" to "); bc_printip(packet->receiver); putchar(' ');
     switch(packet->type) {
         case BC_TYPE_START_TRANSACTION: printf("START_TRANSACTION"); break;
         case BC_TYPE_REQUEST_CONTRAST: printf("REQUEST_CONTRAST"); break;
@@ -43,5 +41,7 @@ void bc_packet_print(bc_packet_t* packet) {
         case BC_TYPE_REPLY_INFO: printf("REPLY_INFO"); break;
         default: printf("UNKNOWN_TYPE");
     }
-    printf(" amount: %d.%02d\n", packet->amount / 100, packet->amount % 100);
+    printf(" amount: ");
+    bc_printamount(packet->amount);
+    printf("\n");
 }

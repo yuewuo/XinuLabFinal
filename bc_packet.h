@@ -26,4 +26,8 @@ int bc_packet_parse(const unsigned char* msg, unsigned int length , bc_packet_t*
 int bc_packet_send(unsigned char* buf, unsigned int* length , bc_packet_t* packet);
 void bc_packet_print(bc_packet_t* packet);
 
+#define bc_printip(ip) do{ unsigned char* ptr = (unsigned char*)&ip; \
+    printf("%hhu.%hhu.%hhu.%hhu" , ptr[0], ptr[1], ptr[2], ptr[3]);} while(0)
+#define bc_printamount(amount) do{ printf("%u.%02u", amount / 100, amount % 100); } while(0)
+
 #endif
