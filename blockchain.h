@@ -8,8 +8,9 @@ extern unsigned int bc_amount;
 #define BLOCKCHAIN_PORT 1024
 #define BLOCKCHAIN_LINEBUF_LEN 128
 #define BLOCKCHAIN_MAX_TRANSACTION 16  // 同时进行的最多的transaction个数
-#define BLOCKCHAIN_OTHERS_TIMEOUT 1000  // 和其他人的交易，从建立之初，多少毫秒后交易失效
+#define BLOCKCHAIN_OTHERS_TIMEOUT 3000  // 和其他人的交易，从建立之初，多少毫秒后交易失效
 #define BLOCKCHAIN_MAX_PEER 32  // 最多的对方个数，对于我们现在的班级是30个以下
+#define BC_BROADCAST 0xFFFFFFFF
 
 // 错误码定义
 #define BC_LINEBUF_OVERFLOW -1
@@ -18,6 +19,7 @@ extern unsigned int bc_amount;
 #define BC_PACKET_DECODE_ERROR -4
 #define BC_SELF_BUSY -5
 #define BC_BAD_PACKET -6
+#define BC_FSM_FULL -7
 
 // this is blockchain.c implemented
 int bc_init(unsigned int ip, unsigned int amount);
@@ -47,6 +49,7 @@ typedef struct {  // 仅作为交易发起方
 extern fsm_self_t fsm_self;
 
 typedef struct {
+#define FSM_STATUS_WAIT_REPLY_CONTRAST 1
     unsigned char status;
     short next;  // list point to next
     short prev;
@@ -61,6 +64,7 @@ extern short fsm_others_idle;
 extern short fsm_others_busy;
 void fsm_busy2idle(int idx);
 void fsm_idle2busy(int idx);
+int fsm_getidle(void);
 
 typedef struct {
     unsigned int ip;
