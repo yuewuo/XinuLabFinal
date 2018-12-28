@@ -28,4 +28,11 @@ int bc_handle_line(void);
 int bc_back(void);
 int bc_forward(void);
 
+// 状态机定义
+typedef struct {  // 仅作为交易发起方
+#define SELF_STATUS_IDLE 1
+#define SELF_STATUS_WAIT_FINISH 2
+    unsigned char status;
+} fsm_self_t;
+
 #endif
