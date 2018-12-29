@@ -69,9 +69,9 @@ B->>C: REQUEST_CONTRAST
 B->>D: REQUEST_CONTRAST
 Note over C,D: 两个机器速度不同，假设D先回复
 D->>B: REPLY_CONTRAST
+Note over B: B认定D为此交易矿机
 C-xB: REPLY_CONTRAST
 Note over C,B: C的消息不会被B处理，因为后收到
-Note over B: B认定D为此交易矿机
 B->>D: CONFIRM_CONTRAST
 Note over D: D认定本次交易成功
 Note over D: 广播交易成功消息
