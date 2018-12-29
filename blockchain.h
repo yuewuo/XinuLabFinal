@@ -8,10 +8,10 @@ extern unsigned int bc_amount;
 #define BLOCKCHAIN_PORT 1024
 #define BLOCKCHAIN_LINEBUF_LEN 128
 #define BLOCKCHAIN_MAX_TRANSACTION 16  // 同时进行的最多的transaction个数
-#define BLOCKCHAIN_OTHERS_TIMEOUT 10000  // 和其他人的交易，从建立之初，多少毫秒后交易失效
+#define BLOCKCHAIN_OTHERS_TIMEOUT 3000  // 和其他人的交易，从建立之初，多少毫秒后交易失效
 #define BLOCKCHAIN_MAX_PEER 32  // 最多的对方个数，对于我们现在的班级是30个以下
 #define BC_BROADCAST 0xFFFFFFFF
-#define BLOCKCHAIN_INIT_RANDOM_DELAY 10000  // ms，为了保证各个矿机都有机会处理消息，平衡算力差别，在0～这个值之间随机休眠
+#define BLOCKCHAIN_INIT_RANDOM_DELAY 2000  // ms，为了保证各个矿机都有机会处理消息，平衡算力差别，在0～这个值之间随机休眠
 // 可以通过 `set delay 0` 屏蔽这个设置
 
 // 错误码定义
@@ -45,7 +45,7 @@ int bc_forward(void);
 // 状态机定义
 typedef struct {  // 仅作为交易发起方
 #define SELF_STATUS_IDLE 1
-#define SELF_STATUS_WAIT_FINISH 2
+#define SELF_STATUS_WAIT_FINISH 2  // 收到交易完成广播则交易结束
     unsigned char status;
     unsigned int receiver;
     unsigned int amount;
@@ -55,6 +55,7 @@ extern fsm_self_t fsm_self;
 typedef struct {
 #define FSM_STATUS_WAIT_REPLY_CONTRAST 1
 #define FSM_STATUS_WAIT_CONFIRM_CONTRAST 2
+#define FSM_STATUS_WAIT_FINISH 3  // 收到交易完成广播则交易结束
     unsigned char status;
     short next;  // list point to next
     short prev;

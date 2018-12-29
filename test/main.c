@@ -198,8 +198,8 @@ void bc_sleep_ms(unsigned int ms) {
 }
 
 unsigned int bc_random(unsigned int max) {
-    printf("max = %u\n", max);
+    // printf("max = %u\n", max);
     unsigned int ret = 1 + (((unsigned int)rand()) % max);
-    printf("ret = %u\n", ret);
+    // printf("ret = %u\n", ret);
     return ret;
 }

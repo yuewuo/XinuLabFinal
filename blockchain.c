@@ -22,6 +22,13 @@ unsigned int bc_random_ms;
 #define bc_debug() printf("\033[1;36mdebug:\033[0m ")
 #define bc_success() printf("\033[1;32msuccess:\033[0m ")
 
+int bc_10per(unsigned int money) {
+    if (money < 10) return 1;  // 无论如何矿机至少拿到1分钱
+    return money / 10;
+}
+#define bc_90per(money) (money - bc_10per(money))
+int bc_delta_peer(unsigned int remip, int delta);
+
 int bc_init(unsigned int ip, unsigned int amount) {
     fsm_self.status = SELF_STATUS_IDLE;
     bc_linebuf_idx = 0;
@@ -114,8 +121,8 @@ int bc_handle_line(void) {
         } else if (EQUAL_CMD_PARA(5, "delay")) {
             printf("delay is %u\n", bc_random_ms);
         } else if (EQUAL_CMD_PARA(5, "fsm")) {
-            printf("fsm idle remains %u, the busy ones are\n", fsm_others_idle_cnt);
-            unsigned int busy_cnt = 0, busy = fsm_others_busy;
+            printf("fsm idle remains %u out of %u, the busy ones are\n", fsm_others_idle_cnt, BLOCKCHAIN_MAX_TRANSACTION);
+            unsigned int busy = fsm_others_busy;
             while (busy != -1) {
                 printf("    %hu: status(%hhu): sender(", busy, fsm_others[busy].status); bc_printip(fsm_others[busy].sender); printf("), receiver(");
                 bc_printip(fsm_others[busy].receiver); printf("), amount $"); bc_printamount(fsm_others[busy].amount); putchar('\n');
@@ -224,7 +231,8 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
         fsm_others[idx].sender = remip;
         fsm_others[idx].receiver = bc_ip;
         fsm_others[idx].createtime = nowtime;
-        bc_info(); bc_printip(remip); printf(" try to send $"); bc_printamount(packet.amount); printf(" to me, request contrast and wait");
+        fsm_others[idx].amount = packet.amount;
+        bc_info(); bc_printip(remip); printf(" try to send $"); bc_printamount(packet.amount); printf(" to me, request contrast and wait\n");
     } else if (packet.type == BC_TYPE_REQUEST_CONTRAST) {  // 别的交易请求一台矿机介入
         if (packet.receiver == bc_ip) return 0;  // 自己发的包，不管
         if (packet.sender == bc_ip) return 0;  // 交易的发起者是自己，不管
@@ -233,17 +241,15 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
             bc_printip(packet.receiver); printf(" is not himself, which might be a malicious attack! drop it\n");
             return BC_BAD_PACKET;
         }
-        printf("bc_random_ms: %u\n", bc_random_ms);
         int idx = fsm_getidle();
         if (idx < 0) {
             printf("warning: "); printf("fsm buffer is full, try recompile with larger buffer size\n");
             return BC_FSM_FULL;
         }
-        printf("bc_random_ms: %u\n", bc_random_ms);
         unsigned int ms2sleep = (bc_random_ms == 0) ? 0 : bc_random(bc_random_ms);
         bc_info(); printf("receive a contrast request from "); bc_printip(remip); printf(", delay %ums to reply...", ms2sleep);
         if (ms2sleep) bc_sleep_ms(ms2sleep);
-        printf("sleep done, send contrast reply\n");
+        printf("done, send reply\n");
         bc_packet_t packet_send;
         bc_packet(BC_TYPE_REPLY_CONTRAST, packet.sender, packet.receiver, packet.amount, &packet_send);
         unsigned int packet_len;
@@ -253,10 +259,123 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
         fsm_others[idx].sender = packet.sender;
         fsm_others[idx].receiver = packet.receiver;
         fsm_others[idx].createtime = nowtime;
+        fsm_others[idx].amount = packet.amount;
         bc_info(); printf("send contrast reply to "); bc_printip(remip); printf(", transaction is $"); bc_printamount(packet.amount); 
-        printf(" from "); bc_printip(packet.sender); printf(", wait for contrast confirm or timeout");
+        printf(" from "); bc_printip(packet.sender); printf(", wait for confirm\n");
     } else if (packet.type == BC_TYPE_REPLY_CONTRAST) {  // 矿机回复
-        bc_debug(); printf("BC_TYPE_REPLY_CONTRAST\n");
+        if (packet.sender == bc_ip || packet.receiver != bc_ip) {
+            bc_warning(); printf("why reply contrast to me? Might be a malicious attack! drop it\n");
+            return BC_BAD_PACKET;
+        }
+        if (packet.sender == remip) {
+            bc_warning(); printf("you shouldn't reply contrast because you are the sender! drop it\n");
+            return BC_BAD_PACKET;
+        }
+        // 在busy链表中选择寻找这个回复
+        unsigned int busy = fsm_others_busy;
+        while (busy != -1) {
+            if (fsm_others[busy].status == FSM_STATUS_WAIT_REPLY_CONTRAST
+                    && fsm_others[busy].sender == packet.sender && fsm_others[busy].receiver == packet.receiver) {
+                break;
+            }
+            busy = fsm_others[busy].next;
+        }
+        if (busy == -1) return 0;  // 正常操作，因为很多矿机都会回复消息
+        if (packet.amount != fsm_others[busy].amount) {
+            bc_warning(); printf("transaction money is modified by "); bc_printip(remip); printf(" from $"); bc_printamount(fsm_others[busy].amount);
+            printf(" to $"); bc_printamount(packet.amount); printf(", which might be a malicious attack! drop it\n");
+            return BC_BAD_PACKET;
+        }
+        bc_info(); printf("transaction from "); bc_printip(packet.sender); printf(" to "); bc_printip(packet.receiver); printf(" of $");
+        bc_printamount(packet.amount); printf(" is done with the help of "); bc_printip(remip); printf(", confirm it and wait for broadcast\n");
+        // 向矿机发送confirm消息
+        bc_packet_t packet_send;
+        bc_packet(BC_TYPE_CONFIRM_CONTRAST, packet.sender, packet.receiver, packet.amount, &packet_send);
+        unsigned int packet_len;
+        bc_packet_send(bc_packetbuf, &packet_len, &packet_send);
+        udp_sendpacket(bc_packetbuf, packet_len, remip, BLOCKCHAIN_PORT);
+        fsm_others[busy].status = FSM_STATUS_WAIT_FINISH;  // FSM变为等待矿机发布广播
+    } else if (packet.type == BC_TYPE_CONFIRM_CONTRAST) {
+        if (packet.receiver != remip) {
+            bc_warning(); bc_printip(remip); printf(" try to confirm contrast but transaction receiver ");
+            bc_printip(packet.receiver); printf(" is not himself, which might be a malicious attack! drop it\n");
+            return BC_BAD_PACKET;
+        }
+        // 在busy链表中选择寻找这个回复
+        unsigned int busy = fsm_others_busy;
+        while (busy != -1) {
+            if (fsm_others[busy].status == FSM_STATUS_WAIT_CONFIRM_CONTRAST
+                    && fsm_others[busy].sender == packet.sender && fsm_others[busy].receiver == packet.receiver) {
+                break;
+            }
+            busy = fsm_others[busy].next;
+        }
+        if (busy == -1) {
+            bc_warning(); bc_printip(remip); printf(" try to confirm contrast but cannot find the transaction in local table");
+            printf(", which might be a malicious attack! drop it\n");
+            return BC_BAD_PACKET;
+        }
+        if (packet.amount != fsm_others[busy].amount) {
+            bc_warning(); printf("transaction money is modified by "); bc_printip(remip); printf(" from $"); bc_printamount(fsm_others[busy].amount);
+            printf(" to $"); bc_printamount(packet.amount); printf(", which might be a malicious attack! drop it\n");
+            return BC_BAD_PACKET;
+        }
+        bc_success(); printf("transaction from "); bc_printip(packet.sender); printf(" to "); bc_printip(packet.receiver); printf(" of $");
+        bc_printamount(packet.amount); printf(" is handled by myself, broadcast it\n");
+        // 全局广播交易完成
+        bc_packet_t packet_send;
+        bc_packet(BC_TYPE_TRANSACTION_BOARDCAST, packet.sender, packet.receiver, packet.amount, &packet_send);
+        unsigned int packet_len;
+        bc_packet_send(bc_packetbuf, &packet_len, &packet_send);
+        udp_sendpacket(bc_packetbuf, packet_len, BC_BROADCAST, BLOCKCHAIN_PORT);
+        fsm_busy2idle(busy);  // 完成了交易
+        bc_amount += bc_10per(packet.amount);
+    } else if (packet.type == BC_TYPE_TRANSACTION_BOARDCAST) {
+        if (packet.sender == bc_ip) {  // 如果是自己发出的
+            if (fsm_self.status == SELF_STATUS_WAIT_FINISH && fsm_self.receiver == packet.receiver && fsm_self.amount == packet.amount) {
+                bc_amount -= packet.amount;
+                bc_delta_peer(remip, bc_10per(packet.amount));
+                bc_delta_peer(packet.receiver, bc_90per(packet.amount));
+                bc_success(); printf("transaction to "); bc_printip(packet.receiver); printf(" of $"); bc_printamount(packet.amount);
+                printf(" finished! now my account is $"); bc_printamount(bc_amount); printf("\n");
+                fsm_self.status = SELF_STATUS_IDLE;
+            } else {
+                bc_warning(); bc_printip(remip); printf(" broadcast a transaction from myself to "); bc_printip(packet.receiver); printf(" of $");
+                bc_printamount(packet.amount); printf(" but not true, which might be a malicious attack! drop it\n");
+            }
+        } else if (packet.receiver == bc_ip) {  // 是发给自己的
+            unsigned int busy = fsm_others_busy;
+            while (busy != -1) {
+                if (fsm_others[busy].status == FSM_STATUS_WAIT_FINISH
+                        && fsm_others[busy].sender == packet.sender && fsm_others[busy].receiver == packet.receiver) {
+                    break;
+                }
+                busy = fsm_others[busy].next;
+            }
+            if (busy == -1) {
+                bc_warning(); bc_printip(remip); printf(" try to broadcast transaction but cannot find that in local table");
+                printf(", which might be a malicious attack! drop it\n");
+                return BC_BAD_PACKET;
+            }
+            if (packet.amount != fsm_others[busy].amount) {
+                bc_warning(); printf("transaction money is modified by "); bc_printip(remip); printf(" from $"); bc_printamount(fsm_others[busy].amount);
+                printf(" to $"); bc_printamount(packet.amount); printf(", which might be a malicious attack! drop it\n");
+                return BC_BAD_PACKET;
+            }
+            bc_amount += bc_90per(packet.amount);
+            bc_delta_peer(remip, bc_10per(packet.amount));
+            bc_delta_peer(packet.sender, -packet.amount);
+            bc_success(); printf("transaction from "); bc_printip(packet.sender); printf(" of $"); bc_printamount(packet.amount);
+            printf(" finished! now my account is $"); bc_printamount(bc_amount); printf("\n");
+            fsm_busy2idle(busy);
+        } else {  // 其他的消息，无从考证，但直接记录
+            bc_success(); printf("transaction from "); bc_printip(packet.sender); printf(" to "); bc_printip(packet.receiver); printf(" of $"); 
+            bc_printamount(packet.amount); printf(" finished but not checked"); printf("\n");
+            // 更新三方的数据
+            bc_delta_peer(remip, bc_10per(packet.amount));
+            bc_delta_peer(packet.sender, -packet.amount);
+            bc_delta_peer(packet.receiver, bc_90per(packet.amount));
+        }
     } else if (packet.type == BC_TYPE_REQUEST_INFO) {  // 别的机器开机启动的时候会发送这个消息，获得别的主机的信息，回复之
         if (packet.sender == bc_ip) return 0;  // 自己发的包，不管
         if (remip != packet.sender) {
@@ -284,8 +403,19 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
     return 0;
 }
 
+int bc_delta_peer(unsigned int remip, int delta) {
+    unsigned int i=0;
+    for (; i<bc_peer_cnt; ++i) {
+        if (bc_peers[i].ip == remip) {
+            bc_peers[i].money += delta;
+            return 0;
+        }
+    }
+    return -1;  // 没有找到这个人，不过OK，可能是没有实现peer搜寻协议的程序
+}
+
 int bc_update_peer(unsigned int remip, unsigned int amount) {
-    bc_debug(); printf("amount = %u\n", amount);
+    // bc_debug(); printf("amount = %u\n", amount);
     unsigned int i=0;
     for (; i<bc_peer_cnt; ++i) {
         if (bc_peers[i].ip == remip) {
@@ -295,6 +425,7 @@ int bc_update_peer(unsigned int remip, unsigned int amount) {
                 printf(", but still trust him? yes! trust him.\n");
                 bc_peers[i].money = amount;
             }
+            return 0;
         }
     }
     if (i == bc_peer_cnt) {
@@ -304,6 +435,7 @@ int bc_update_peer(unsigned int remip, unsigned int amount) {
         bc_peers[bc_peer_cnt].money = amount;
         ++bc_peer_cnt;
     }
+    return 0;
 }
 
 int bc_input_packet(const char* buf, unsigned int len, unsigned int remip, unsigned short remport) {
@@ -337,7 +469,7 @@ void fsm_idle2busy(int idx) {
     // 从idle链表中删除
     short next = fsm_others[idx].next;
     short prev = fsm_others[idx].prev;
-    printf("next: %hd, prev: %hd\n", next, prev);
+    // printf("next: %hd, prev: %hd\n", next, prev);
     if (prev == -1) fsm_others_idle = next;
     else fsm_others[prev].next = next;
     if (next != -1) fsm_others[next].prev = prev;
@@ -358,7 +490,7 @@ void fsm_idle2busy(int idx) {
 int fsm_getidle(void) {
     if (fsm_others_idle_cnt == 0) return -1;
     int idx = fsm_others_idle;
-    printf("idx = %d\n", idx);
+    // printf("idx = %d\n", idx);
     fsm_idle2busy(idx);
     return idx;
 }
