@@ -13,6 +13,10 @@ extern unsigned int bc_amount;
 #define BC_BROADCAST 0xFFFFFFFF
 #define BLOCKCHAIN_INIT_RANDOM_DELAY 2000  // ms，为了保证各个矿机都有机会处理消息，平衡算力差别，在0～这个值之间随机休眠
 // 可以通过 `set delay 0` 屏蔽这个设置
+#define BLOCKCHAIN_CURSOR_RECORD_SIZE 10  // 记录多少条命令输入（包括当前输入）
+extern char bc_linebuf[BLOCKCHAIN_LINEBUF_LEN];
+extern char bc_cmdrecord[BLOCKCHAIN_CURSOR_RECORD_SIZE][BLOCKCHAIN_LINEBUF_LEN];
+extern unsigned int bc_cmdrecord_idx;
 
 // 错误码定义
 #define BC_LINEBUF_OVERFLOW -1

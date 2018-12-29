@@ -15,6 +15,10 @@ unsigned int fsm_others_idle_cnt;
 fsm_other_t fsm_others[BLOCKCHAIN_MAX_TRANSACTION];
 bc_peer_t bc_peers[BLOCKCHAIN_MAX_PEER];
 unsigned int bc_random_ms;
+char bc_cmdrecord[BLOCKCHAIN_CURSOR_RECORD_SIZE][BLOCKCHAIN_LINEBUF_LEN];
+unsigned int bc_cmdrecord_idx;
+char bc_cmdrecord_current[BLOCKCHAIN_LINEBUF_LEN];
+unsigned char bc_escape_char;
 
 #define bc_warning() printf("\033[1;33mwarning:\033[0m ")
 #define bc_error() printf("\033[1;31merror:\033[0m ")
@@ -46,6 +50,9 @@ int bc_init(unsigned int ip, unsigned int amount) {
     bc_peer_cnt = 0;
     bc_amount = amount;
     bc_random_ms = BLOCKCHAIN_INIT_RANDOM_DELAY;
+    bc_cmdrecord_idx = 0;
+    bc_escape_char = 0;
+    for (int i=0; i<BLOCKCHAIN_CURSOR_RECORD_SIZE; ++i) bc_cmdrecord[i][0] = '\0';
     // 向其他机器广播自己的消息，并接收回复
     bc_packet_t packet;
     bc_packet(BC_TYPE_REQUEST_INFO, bc_ip, BC_BROADCAST, bc_amount, &packet);
@@ -60,10 +67,41 @@ int bc_input_char(char c) {
     int ret = 0;
     if (c == '\n') {
         putchar(c);
+        if (strcmp(bc_linebuf, bc_cmdrecord[1]) && bc_linebuf[0]) {  // 和上一条命令不同才记录进去，不为空命令才记录进去
+            strcpy(bc_cmdrecord[0], bc_linebuf);
+            for (unsigned int i=BLOCKCHAIN_CURSOR_RECORD_SIZE-1; i>0; --i) {
+                strcpy(bc_cmdrecord[i], bc_cmdrecord[i-1]);  // 滚动复制，效率低，不过无所谓
+            }
+        }
+        bc_cmdrecord_idx = 0;
         ret = bc_handle_line();
         bc_linebuf_idx = 0;
         bc_linebuf[0] = '\0';
         bc_forward();
+    } else if (c == 0x1B) {
+        bc_escape_char = 2;
+    } else if (bc_escape_char == 2 && c == '[') {
+        bc_escape_char = 1;
+    } else if (bc_escape_char == 1) {  // escape字符
+        bc_escape_char = 0;
+        if (c == 'A') {  // 上箭头
+            if (bc_cmdrecord_idx + 1 < BLOCKCHAIN_CURSOR_RECORD_SIZE && bc_cmdrecord[bc_cmdrecord_idx + 1][0] != '\0') {
+                if (bc_cmdrecord_idx == 0) {  // copy进入bc_cmdrecord[0]
+                    strcpy(bc_cmdrecord[0], bc_linebuf);
+                }
+                bc_back();
+                bc_cmdrecord_idx += 1;
+                bc_linebuf_idx = strlen(strcpy(bc_linebuf, bc_cmdrecord[bc_cmdrecord_idx]));
+                bc_forward();
+            }
+        } else if (c == 'B') {  // 下箭头
+            if (bc_cmdrecord_idx > 0) {
+                bc_back();
+                bc_cmdrecord_idx -= 1;
+                bc_linebuf_idx = strlen(strcpy(bc_linebuf, bc_cmdrecord[bc_cmdrecord_idx]));
+                bc_forward();
+            }
+        }
     } else if (c >= 0x21 && c <= 0x7E || c == ' ') {  // 可见字符区间
         if (bc_linebuf_idx < 0 || bc_linebuf_idx > BLOCKCHAIN_LINEBUF_LEN - 2)
             return BC_LINEBUF_OVERFLOW;  // buffer不够
@@ -74,10 +112,8 @@ int bc_input_char(char c) {
         if (bc_linebuf_idx <= 0) return 0;
         bc_linebuf[--bc_linebuf_idx] = '\0';
         putchar('\b'); putchar(' '); putchar('\b');
-    } else if (c == 0x1B) {
-        // TODO 实现光标左右移动编辑，同时也需要更改0x7F的逻辑
-    } else if (c == 0x1A) {
-        // TODO 同上
+    } else if (c == 0x19) {  // 下光标
+
     }
     return ret;
 }
@@ -127,6 +163,12 @@ int bc_handle_line(void) {
                 printf("    %hu: status(%hhu): sender(", busy, fsm_others[busy].status); bc_printip(fsm_others[busy].sender); printf("), receiver(");
                 bc_printip(fsm_others[busy].receiver); printf("), amount $"); bc_printamount(fsm_others[busy].amount); putchar('\n');
                 busy = fsm_others[busy].next;
+            }
+        } else if (EQUAL_CMD_PARA(5, "cmd")) {
+            printf("cmd records are:\n");
+            for (int i=1; i<BLOCKCHAIN_CURSOR_RECORD_SIZE; ++i) {
+                if (bc_cmdrecord[i][0] == '\0') break;  // 发现一条0记录则终止
+                printf("    -%d: \"%s\"\n", i, bc_cmdrecord[i]);
             }
         } else {
             bc_error(); printf("don't known what to show, see \"help\"\n");
