@@ -7,7 +7,7 @@ unsigned int bc_amount;
 char bc_linebuf[BLOCKCHAIN_LINEBUF_LEN];
 int bc_linebuf_idx;
 char bc_packetbuf[512];
-unsigned long long lasttime;
+unsigned long long bc_starttime;
 fsm_self_t fsm_self;
 short fsm_others_idle;
 short fsm_others_busy;
@@ -19,6 +19,11 @@ char bc_cmdrecord[BLOCKCHAIN_CURSOR_RECORD_SIZE][BLOCKCHAIN_LINEBUF_LEN];
 unsigned int bc_cmdrecord_idx;
 char bc_cmdrecord_current[BLOCKCHAIN_LINEBUF_LEN];
 unsigned char bc_escape_char;
+unsigned int bc_packetrecord_idx;
+bc_record_t bc_packetrecord[BLOCKCHAIN_PACKET_RECORD_SIZE];
+unsigned int bc_transactionrecord_idx;
+bc_record_t bc_transactionrecord[BLOCKCHAIN_TRANSACTION_RECORD_SIZE];
+unsigned long long 
 
 #define bc_warning() printf("\033[1;33mwarning:\033[0m ")
 #define bc_error() printf("\033[1;31merror:\033[0m ")
@@ -39,7 +44,7 @@ int bc_init(unsigned int ip, unsigned int amount) {
     bc_linebuf[0] = '\0';
     bc_forward();
     bc_ip = ip;
-    lasttime = bc_gettime_ms();
+    bc_starttime = bc_gettime_ms();
     fsm_others_idle_cnt = BLOCKCHAIN_MAX_TRANSACTION;
     for (int i=0; i<BLOCKCHAIN_MAX_TRANSACTION; ++i) {
         fsm_others[i].next = i+1;  // 建立空闲链表
@@ -52,6 +57,10 @@ int bc_init(unsigned int ip, unsigned int amount) {
     bc_random_ms = BLOCKCHAIN_INIT_RANDOM_DELAY;
     bc_cmdrecord_idx = 0;
     bc_escape_char = 0;
+    bc_packetrecord_idx = 0;
+    for (int i=0; i<BLOCKCHAIN_PACKET_RECORD_SIZE; ++i) bc_packetrecord[i].time = -1;  // invalid
+    bc_transactionrecord_idx = 0;
+    for (int i=0; i<BLOCKCHAIN_TRANSACTION_RECORD_SIZE; ++i) bc_transactionrecord[i].time = -1;  // invalid
     for (int i=0; i<BLOCKCHAIN_CURSOR_RECORD_SIZE; ++i) bc_cmdrecord[i][0] = '\0';
     // 向其他机器广播自己的消息，并接收回复
     bc_packet_t packet;
@@ -120,10 +129,6 @@ int bc_input_char(char c) {
 
 int bc_loop() {
     unsigned long long nowtime = bc_gettime_ms();
-    // if (nowtime - lasttime >= 1000) {  // 1s
-    //     lasttime = nowtime;
-    //     bc_println("1 second passed, now time is %llums", nowtime);
-    // }
     int busy = fsm_others_busy;
     while (busy >= 0) {
         int next = fsm_others[busy].next;  // 预先保存，之后可能修改
@@ -169,6 +174,29 @@ int bc_handle_line(void) {
             for (int i=1; i<BLOCKCHAIN_CURSOR_RECORD_SIZE; ++i) {
                 if (bc_cmdrecord[i][0] == '\0') break;  // 发现一条0记录则终止
                 printf("    -%d: \"%s\"\n", i, bc_cmdrecord[i]);
+            }
+        } else if (EQUAL_CMD_PARA(5, "packet")) {
+            printf("print recorded packets (relative time to this program start)\n");
+            for (unsigned int i = bc_packetrecord_idx, j=0; j<BLOCKCHAIN_PACKET_RECORD_SIZE; ++j) {
+                i = (i + BLOCKCHAIN_PACKET_RECORD_SIZE - 1) % BLOCKCHAIN_PACKET_RECORD_SIZE;  // -1
+                if (bc_packetrecord[i].time == -1) break;
+                unsigned long long delt = bc_packetrecord[i].time - bc_starttime;
+                printf("    %llu.%llus: ", delt / 1000, delt % 1000);
+                bc_packet_print(&bc_packetrecord[i].packet);
+                printf("\n");
+            }
+        } else if (EQUAL_CMD_PARA(5, "transaction")) {
+            printf("print success transactions (relative time to this program start)\n");
+            for (unsigned int i = bc_transactionrecord_idx, j=0; j<BLOCKCHAIN_TRANSACTION_RECORD_SIZE; ++j) {
+                i = (i + BLOCKCHAIN_TRANSACTION_RECORD_SIZE - 1) % BLOCKCHAIN_TRANSACTION_RECORD_SIZE;  // -1
+                if (bc_transactionrecord[i].time == -1) break;
+                unsigned long long delt = bc_transactionrecord[i].time - bc_starttime;
+                printf("    %llu.%llus: ", delt / 1000, delt % 1000);
+                printf("from "); bc_printip(bc_transactionrecord[i].packet.sender);
+                printf(" to "); bc_printip(bc_transactionrecord[i].packet.receiver);
+                printf(" of $"); bc_printamount(bc_transactionrecord[i].packet.amount);
+                printf(", in the help of [\033[1;30m"); bc_printip(bc_transactionrecord[i].helper);
+                printf("\033[0m]\n");
             }
         } else {
             bc_error(); printf("don't known what to show, see \"help\"\n");
@@ -220,6 +248,9 @@ int bc_handle_line(void) {
         printf("    show delay: print max random delay when receiving contrast request\n");
         printf("    set delay <delay> set max random delay when receiving contrast request, 0 for no delay\n");
         printf("    show fsm: print asynochronized waiting events\n");
+        printf("    show cmd: print history commands\n");
+        printf("    show packet: print history packets\n");
+        printf("    show transaction: print history success transactions\n");
     } else {
         bc_error(); printf("unknown command, try \"help\"\n");
     }
@@ -247,6 +278,7 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
     // printf("ret = %d\n", ret);
     if (ret != 0) return BC_PACKET_DECODE_ERROR;
     bc_debug(); bc_packet_print(&packet); printf(" [\033[1;30mremip:"); bc_printip(remip); printf("\033[0m]\n");
+    bc_record_t record; record.packet = packet; record.time = nowtime; bc_packetrecord[bc_packetrecord_idx++] = record;  // 记录包
     if (packet.type == BC_TYPE_START_TRANSACTION) {
         if (remip != packet.sender) {
             bc_warning(); bc_printip(remip); printf(" want to start a transaction with sender ip = ");
@@ -362,7 +394,7 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
             printf(" to $"); bc_printamount(packet.amount); printf(", which might be a malicious attack! drop it\n");
             return BC_BAD_PACKET;
         }
-        bc_success(); printf("transaction from "); bc_printip(packet.sender); printf(" to "); bc_printip(packet.receiver); printf(" of $");
+        bc_info(); printf("transaction from "); bc_printip(packet.sender); printf(" to "); bc_printip(packet.receiver); printf(" of $");
         bc_printamount(packet.amount); printf(" is handled by myself, broadcast it\n");
         // 全局广播交易完成
         bc_packet_t packet_send;
@@ -372,12 +404,15 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
         udp_sendpacket(bc_packetbuf, packet_len, BC_BROADCAST, BLOCKCHAIN_PORT);
         fsm_busy2idle(busy);  // 完成了交易
         bc_amount += bc_10per(packet.amount);
+        // TODO check 发送广播的包应该会被自己收到，进而记录，所以这里不需要记录
     } else if (packet.type == BC_TYPE_TRANSACTION_BOARDCAST) {
         if (packet.sender == bc_ip) {  // 如果是自己发出的
             if (fsm_self.status == SELF_STATUS_WAIT_FINISH && fsm_self.receiver == packet.receiver && fsm_self.amount == packet.amount) {
                 bc_amount -= packet.amount;
                 bc_delta_peer(remip, bc_10per(packet.amount));
                 bc_delta_peer(packet.receiver, bc_90per(packet.amount));
+                bc_record_t record; record.packet = packet; record.time = nowtime; record.helper = remip;
+                bc_transactionrecord[bc_transactionrecord_idx++] = record;  // 记录包
                 bc_success(); printf("transaction to "); bc_printip(packet.receiver); printf(" of $"); bc_printamount(packet.amount);
                 printf(" finished! now my account is $"); bc_printamount(bc_amount); printf("\n");
                 fsm_self.status = SELF_STATUS_IDLE;
@@ -407,10 +442,14 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
             bc_amount += bc_90per(packet.amount);
             bc_delta_peer(remip, bc_10per(packet.amount));
             bc_delta_peer(packet.sender, -packet.amount);
+            bc_record_t record; record.packet = packet; record.time = nowtime; record.helper = remip;
+            bc_transactionrecord[bc_transactionrecord_idx++] = record;  // 记录包
             bc_success(); printf("transaction from "); bc_printip(packet.sender); printf(" of $"); bc_printamount(packet.amount);
             printf(" finished! now my account is $"); bc_printamount(bc_amount); printf("\n");
             fsm_busy2idle(busy);
         } else {  // 其他的消息，无从考证，但直接记录
+            bc_record_t record; record.packet = packet; record.time = nowtime; record.helper = remip;
+            bc_transactionrecord[bc_transactionrecord_idx++] = record;  // 记录包
             bc_success(); printf("transaction from "); bc_printip(packet.sender); printf(" to "); bc_printip(packet.receiver); printf(" of $"); 
             bc_printamount(packet.amount); printf(" finished but not checked"); printf("\n");
             // 更新三方的数据

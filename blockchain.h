@@ -17,6 +17,17 @@ extern unsigned int bc_amount;
 extern char bc_linebuf[BLOCKCHAIN_LINEBUF_LEN];
 extern char bc_cmdrecord[BLOCKCHAIN_CURSOR_RECORD_SIZE][BLOCKCHAIN_LINEBUF_LEN];
 extern unsigned int bc_cmdrecord_idx;
+typedef struct {
+    unsigned long long time;  // -1 means invalid
+    bc_packet_t packet;
+    unsigned int helper;  // 矿机IP地址
+} bc_record_t;
+#define BLOCKCHAIN_PACKET_RECORD_SIZE 256  // 记录多少个packet
+extern unsigned int bc_packetrecord_idx;
+extern bc_record_t bc_packetrecord[BLOCKCHAIN_PACKET_RECORD_SIZE];
+#define BLOCKCHAIN_TRANSACTION_RECORD_SIZE 128  // 记录多少个成功的transaction（即收到广播的，以及自己作为矿机的）
+extern unsigned int bc_transactionrecord_idx;
+extern bc_record_t bc_transactionrecord[BLOCKCHAIN_TRANSACTION_RECORD_SIZE];
 
 // 错误码定义
 #define BC_LINEBUF_OVERFLOW -1
