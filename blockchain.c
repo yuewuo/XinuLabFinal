@@ -181,7 +181,7 @@ int bc_handle_line(void) {
                 i = (i + BLOCKCHAIN_PACKET_RECORD_SIZE - 1) % BLOCKCHAIN_PACKET_RECORD_SIZE;  // -1
                 if (bc_packetrecord[i].time == -1) break;
                 unsigned long long delt = bc_packetrecord[i].time - bc_starttime;
-                printf("    %llu.%llus: ", delt / 1000, delt % 1000);
+                printf("%8llu.%03llus: ", delt / 1000, delt % 1000);
                 bc_packet_print(&bc_packetrecord[i].packet);
                 printf("\n");
             }
@@ -210,7 +210,7 @@ int bc_handle_line(void) {
         }
     } else if (iS_COMMAND("send ")) {
         if (fsm_self.status != SELF_STATUS_IDLE) {  // 正在处理别的事务，不能发送
-            printf("busy: handling one transaction now. stop it using \"cancel\"\n");
+            bc_error(); printf("busy: handling one transaction now. stop it using \"cancel\"\n");
             return BC_SELF_BUSY;
         }
         unsigned int ip;
