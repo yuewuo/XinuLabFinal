@@ -24,11 +24,66 @@ typedef struct {
 
     unsigned int sender;
     unsigned int receiver;
-    unsigned int amount;  // 精确到0.1分，实际钱数为 amount/1000.0
+    unsigned int amount;  // 仿照银行系统，精确到1分，实际钱数为 amount/100 元
 } bc_packet_t;
 ```
 
 使用version字节，如果大于`0x7F`一定不是ASCII字符，以此和字符串程序区分，后期考虑兼容字符串编码的程序
+
+### 网络流程图
+
+1. peer发现流程图
+
+```mermaid
+sequenceDiagram
+Note over A: 已经在系统中
+Note over B: 已经在系统中
+Note over C: 已经在系统中
+Note over D: 此时想要加入系统
+D->>D: REQUEST_INFO
+D->>C: REQUEST_INFO
+D->>B: REQUEST_INFO
+D->>A: REQUEST_INFO
+Note over D,A: 发送的消息里包含D的初始钱数，A、B、C应相应记录，或是更新已经存在的表里的数值*
+A->>D: REPLY_INFO
+B->>D: REPLY_INFO
+C->>D: REPLY_INFO
+Note over A,C: 发送各自的当前钱数*
+```
+
+* 在这个过程中，如果一些设备重启并且重设它们的钱数，和之前记录不符者，本仓库的实现会报warning，但仍然相信它的数值。同时，正常结束程序，会在结尾打印当前钱数，可以用于下次开始程序的输入参数。（这里有很多race condition，比如作为发送者，强行结束程序，会导致自己的钱没有扣，其他人拿到了钱，所以结束程序前最好确保没有正在发送的交易，以及通过`show fsm`打印当前后台进行的交易，如果没有再终止程序。虽然你看的时候没有不代表最终没有.......解决方案是实现一个flag，设置flag以后不再接受新的交易，直到已有的后台交易完成或超时，用户才可以终止程序，这个留作TODO）
+* 这里也有race condition，解释同上
+
+2. 交易流程图
+
+```mermaid
+sequenceDiagram
+A->>B: START_TRANSACTION
+Note over A,B: A的IP, B的IP, 想发送钱数
+Note over B: 收到请求后广播
+B->>A: REQUEST_CONTRAST
+Note over A: 忽略，不能作为矿机
+B->>B: REQUEST_CONTRAST
+Note over B: 忽略，不能作为矿机
+B->>C: REQUEST_CONTRAST
+B->>D: REQUEST_CONTRAST
+Note over C,D: 两个机器速度不同，假设D先回复
+D->>B: REPLY_CONTRAST
+C-xB: REPLY_CONTRAST
+Note over C,B: C的消息不会被B处理，因为后收到
+Note over B: B认定D为此交易矿机
+B->>D: CONFIRM_CONTRAST
+Note over D: D认定本次交易成功
+Note over D: 广播交易成功消息
+D->>D: TRANSACTION_BOARDCAST
+Note over D: 扣除10%手续费
+D->>C: TRANSACTION_BOARDCAST
+Note over C: 记录本次交易
+D->>B: TRANSACTION_BOARDCAST
+Note over B: 获得钱数减去手续费
+D->>A: TRANSACTION_BOARDCAST
+Note over A: 扣除发送的钱数
+```
 
 ### 漏洞与攻击
 
@@ -46,7 +101,14 @@ typedef struct {
 这部分是程序的接口，当port到XINU上运行时需要仿照实现相应功能
 
 ```c
-
+// 获取当前的时间，单位是毫秒
+unsigned long long bc_gettime_ms(void);
+// 指定ip和端口发送UDP包
+int udp_sendpacket(char* buf, unsigned int length, unsigned int remip, unsigned short remport);
+// 调用OS的sleep函数，单位是毫秒
+void bc_sleep_ms(unsigned int ms);
+// 随机数生成 1 ≤ ret ≤ max，收到请求矿机指令时随机延时，这样各个机器都有机会处理请求
+unsigned int bc_random(unsigned int max);  // generate 1 ~ max random number
 ```
 
 ## 测试
