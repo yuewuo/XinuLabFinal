@@ -36,12 +36,15 @@ def clear_exiting_network():
     print("all veth pair is removed")
 
     nss = getoutordie("sudo ip netns list").split('\n')
-    print("existing namespace:", nss, ", will then delete them")
-    getoutordie("sudo ip -all netns delete")
-    nss = getoutordie("sudo ip netns list").split('\n')
-    if len(nss) > 1 or nss[0] != "":
-        print("cannot delete namespace, failed")
-        exit(-1)
+    if len(nss) == 1 and nss[0] == "":
+        print("no namespace existed")
+    else:
+        print("existing namespace:", nss, ", will then delete them")
+        getoutordie("sudo ip -all netns delete")
+        nss = getoutordie("sudo ip netns list").split('\n')
+        if len(nss) > 1 or nss[0] != "":
+            print("cannot delete namespace, failed")
+            exit(-1)
     
     print("deleting bridge device: \"%s\"" % bridgename)
     ret, out = subprocess.getstatusoutput("sudo ip link set %s down" % bridgename)

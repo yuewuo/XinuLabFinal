@@ -34,6 +34,8 @@ int main(int argc, char** argv) {
     int client_len;
     char rcv_buff[512];
 
+    srand(time(NULL));  // 随机数
+
     if (argc != 2) {
         printf("usage: ./main <initial money[float]>\n");
         exit(0);
@@ -188,4 +190,16 @@ int udp_sendpacket(char* buf, unsigned int length, unsigned int remip, unsigned 
     addr.sin_addr.s_addr = remip;
     ssize_t n = sendto(sock_fd, buf, length, 0, (struct sockaddr *)&addr, sizeof(addr));
     return !(n == length);  // 成功返回0
+}
+
+void bc_sleep_ms(unsigned int ms) {
+    fflush(stdin);
+    usleep(1000ULL * ms);
+}
+
+unsigned int bc_random(unsigned int max) {
+    printf("max = %u\n", max);
+    unsigned int ret = 1 + (((unsigned int)rand()) % max);
+    printf("ret = %u\n", ret);
+    return ret;
 }

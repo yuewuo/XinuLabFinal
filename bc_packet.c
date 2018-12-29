@@ -29,7 +29,7 @@ int bc_packet_send(unsigned char* buf, unsigned int* length , bc_packet_t* packe
 
 void bc_packet_print(bc_packet_t* packet) {
     printf("from "); bc_printip(packet->sender);
-    printf(" to "); bc_printip(packet->receiver); putchar(' ');
+    printf(" to "); bc_printip(packet->receiver); printf(" \033[0;36m");
     switch(packet->type) {
         case BC_TYPE_START_TRANSACTION: printf("START_TRANSACTION"); break;
         case BC_TYPE_REQUEST_CONTRAST: printf("REQUEST_CONTRAST"); break;
@@ -41,7 +41,6 @@ void bc_packet_print(bc_packet_t* packet) {
         case BC_TYPE_REPLY_INFO: printf("REPLY_INFO"); break;
         default: printf("UNKNOWN_TYPE");
     }
-    printf(" amount: ");
+    printf("\033[0m amount: ");
     bc_printamount(packet->amount);
-    printf("\n");
 }

@@ -14,6 +14,7 @@ short fsm_others_busy;
 unsigned int fsm_others_idle_cnt;
 fsm_other_t fsm_others[BLOCKCHAIN_MAX_TRANSACTION];
 bc_peer_t bc_peers[BLOCKCHAIN_MAX_PEER];
+unsigned int bc_random_ms;
 
 #define bc_warning() printf("\033[1;33mwarning:\033[0m ")
 #define bc_error() printf("\033[1;31merror:\033[0m ")
@@ -37,6 +38,7 @@ int bc_init(unsigned int ip, unsigned int amount) {
     fsm_others_idle = 0;
     bc_peer_cnt = 0;
     bc_amount = amount;
+    bc_random_ms = BLOCKCHAIN_INIT_RANDOM_DELAY;
     // 向其他机器广播自己的消息，并接收回复
     bc_packet_t packet;
     bc_packet(BC_TYPE_REQUEST_INFO, bc_ip, BC_BROADCAST, bc_amount, &packet);
@@ -109,8 +111,25 @@ int bc_handle_line(void) {
                 printf("    "); bc_printip(bc_peers[i].ip); printf(": \033[1;34m$"); 
                 bc_printamount(bc_peers[i].money); printf("\033[0m\n");
             }
+        } else if (EQUAL_CMD_PARA(5, "delay")) {
+            printf("delay is %u\n", bc_random_ms);
+        } else if (EQUAL_CMD_PARA(5, "fsm")) {
+            printf("fsm idle remains %u, the busy ones are\n", fsm_others_idle_cnt);
+            unsigned int busy_cnt = 0, busy = fsm_others_busy;
+            while (busy != -1) {
+                printf("    %hu: status(%hhu): sender(", busy, fsm_others[busy].status); bc_printip(fsm_others[busy].sender); printf("), receiver(");
+                bc_printip(fsm_others[busy].receiver); printf("), amount $"); bc_printamount(fsm_others[busy].amount); putchar('\n');
+                busy = fsm_others[busy].next;
+            }
         } else {
             bc_error(); printf("don't known what to show, see \"help\"\n");
+        }
+    } else if (iS_COMMAND("set ")) {
+        if (strncmp(bc_linebuf + 4, "delay ", strlen("delay ")) == 0) {
+            sscanf(bc_linebuf + 10, "%u", &bc_random_ms);
+            printf("set delay to %u success\n", bc_random_ms);
+        } else {
+            bc_error(); printf("don't known what to set, see \"help\"\n");
         }
     } else if (iS_COMMAND("send ")) {
         if (fsm_self.status != SELF_STATUS_IDLE) {  // 正在处理别的事务，不能发送
@@ -147,7 +166,11 @@ int bc_handle_line(void) {
         return BC_WANT_EXIT;
     } else if (EQUAL_CMD("help")) {
         printf("blockchain command instruction:\n");
-        printf("    show [ip]: print system ip\n");
+        printf("    show ip: print system ip\n");
+        printf("    show peer: print found peers\n");
+        printf("    show delay: print max random delay when receiving contrast request\n");
+        printf("    set delay <delay> set max random delay when receiving contrast request, 0 for no delay\n");
+        printf("    show fsm: print asynochronized waiting events\n");
     } else {
         bc_error(); printf("unknown command, try \"help\"\n");
     }
@@ -174,7 +197,7 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
     int ret = bc_packet_parse(buf, len, &packet);
     // printf("ret = %d\n", ret);
     if (ret != 0) return BC_PACKET_DECODE_ERROR;
-    bc_debug(); bc_packet_print(&packet);
+    bc_debug(); bc_packet_print(&packet); printf(" [\033[1;30mremip:"); bc_printip(remip); printf("\033[0m]\n");
     if (packet.type == BC_TYPE_START_TRANSACTION) {
         if (remip != packet.sender) {
             bc_warning(); bc_printip(remip); printf(" want to start a transaction with sender ip = ");
@@ -187,12 +210,13 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
             return BC_BAD_PACKET;
         }
         int idx = fsm_getidle();
+        printf("fsm_others_busy = %hu\n", fsm_others_busy);
         if (idx < 0) {
             printf("warning: "); printf("fsm buffer is full, try recompile with larger buffer size\n");
             return BC_FSM_FULL;
         }
         bc_packet_t packet_send;
-        bc_packet(BC_TYPE_REQUEST_CONTRAST, bc_ip, BC_BROADCAST, packet.amount, &packet_send);
+        bc_packet(BC_TYPE_REQUEST_CONTRAST, packet.sender, packet.receiver, packet.amount, &packet_send);
         unsigned int packet_len;
         bc_packet_send(bc_packetbuf, &packet_len, &packet_send);
         udp_sendpacket(bc_packetbuf, packet_len, BC_BROADCAST, BLOCKCHAIN_PORT);
@@ -200,6 +224,39 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
         fsm_others[idx].sender = remip;
         fsm_others[idx].receiver = bc_ip;
         fsm_others[idx].createtime = nowtime;
+        bc_info(); bc_printip(remip); printf(" try to send $"); bc_printamount(packet.amount); printf(" to me, request contrast and wait");
+    } else if (packet.type == BC_TYPE_REQUEST_CONTRAST) {  // 别的交易请求一台矿机介入
+        if (packet.receiver == bc_ip) return 0;  // 自己发的包，不管
+        if (packet.sender == bc_ip) return 0;  // 交易的发起者是自己，不管
+        if (remip != packet.receiver) {
+            bc_warning(); bc_printip(remip); printf(" try to request contrast but transaction receiver ");
+            bc_printip(packet.receiver); printf(" is not himself, which might be a malicious attack! drop it\n");
+            return BC_BAD_PACKET;
+        }
+        printf("bc_random_ms: %u\n", bc_random_ms);
+        int idx = fsm_getidle();
+        if (idx < 0) {
+            printf("warning: "); printf("fsm buffer is full, try recompile with larger buffer size\n");
+            return BC_FSM_FULL;
+        }
+        printf("bc_random_ms: %u\n", bc_random_ms);
+        unsigned int ms2sleep = (bc_random_ms == 0) ? 0 : bc_random(bc_random_ms);
+        bc_info(); printf("receive a contrast request from "); bc_printip(remip); printf(", delay %ums to reply...", ms2sleep);
+        if (ms2sleep) bc_sleep_ms(ms2sleep);
+        printf("sleep done, send contrast reply\n");
+        bc_packet_t packet_send;
+        bc_packet(BC_TYPE_REPLY_CONTRAST, packet.sender, packet.receiver, packet.amount, &packet_send);
+        unsigned int packet_len;
+        bc_packet_send(bc_packetbuf, &packet_len, &packet_send);
+        udp_sendpacket(bc_packetbuf, packet_len, remip, BLOCKCHAIN_PORT);
+        fsm_others[idx].status = FSM_STATUS_WAIT_CONFIRM_CONTRAST;  // 等待合同确认，不过因为竞争，很可能得不到确认，那么超时
+        fsm_others[idx].sender = packet.sender;
+        fsm_others[idx].receiver = packet.receiver;
+        fsm_others[idx].createtime = nowtime;
+        bc_info(); printf("send contrast reply to "); bc_printip(remip); printf(", transaction is $"); bc_printamount(packet.amount); 
+        printf(" from "); bc_printip(packet.sender); printf(", wait for contrast confirm or timeout");
+    } else if (packet.type == BC_TYPE_REPLY_CONTRAST) {  // 矿机回复
+        bc_debug(); printf("BC_TYPE_REPLY_CONTRAST\n");
     } else if (packet.type == BC_TYPE_REQUEST_INFO) {  // 别的机器开机启动的时候会发送这个消息，获得别的主机的信息，回复之
         if (packet.sender == bc_ip) return 0;  // 自己发的包，不管
         if (remip != packet.sender) {
@@ -221,7 +278,6 @@ int bc_handle_packet(const char* buf, unsigned int len, unsigned int remip) {
         }
         // 添加到peers列表中
         bc_update_peer(remip, packet.amount);
-        // bc_packet_print(&packet);
     } else {
         bc_warning(); printf("receive not-implemented packet type\n");
     }
@@ -262,7 +318,7 @@ void fsm_busy2idle(int idx) {
     short prev = fsm_others[idx].prev;
     if (prev == -1) fsm_others_busy = next;
     else fsm_others[prev].next = next;
-    if (next != -1) fsm_others[prev].prev = prev;
+    if (next != -1) fsm_others[next].prev = prev;
     // 插入idle链表头部
     if (fsm_others_idle == -1) {
         fsm_others_idle = idx;
@@ -281,9 +337,10 @@ void fsm_idle2busy(int idx) {
     // 从idle链表中删除
     short next = fsm_others[idx].next;
     short prev = fsm_others[idx].prev;
+    printf("next: %hd, prev: %hd\n", next, prev);
     if (prev == -1) fsm_others_idle = next;
     else fsm_others[prev].next = next;
-    if (next != -1) fsm_others[prev].prev = prev;
+    if (next != -1) fsm_others[next].prev = prev;
     // 插入busy链表头部
     if (fsm_others_busy == -1) {
         fsm_others_busy = idx;
@@ -301,6 +358,7 @@ void fsm_idle2busy(int idx) {
 int fsm_getidle(void) {
     if (fsm_others_idle_cnt == 0) return -1;
     int idx = fsm_others_idle;
+    printf("idx = %d\n", idx);
     fsm_idle2busy(idx);
     return idx;
 }

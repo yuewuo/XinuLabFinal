@@ -8,9 +8,11 @@ extern unsigned int bc_amount;
 #define BLOCKCHAIN_PORT 1024
 #define BLOCKCHAIN_LINEBUF_LEN 128
 #define BLOCKCHAIN_MAX_TRANSACTION 16  // 同时进行的最多的transaction个数
-#define BLOCKCHAIN_OTHERS_TIMEOUT 3000  // 和其他人的交易，从建立之初，多少毫秒后交易失效
+#define BLOCKCHAIN_OTHERS_TIMEOUT 10000  // 和其他人的交易，从建立之初，多少毫秒后交易失效
 #define BLOCKCHAIN_MAX_PEER 32  // 最多的对方个数，对于我们现在的班级是30个以下
 #define BC_BROADCAST 0xFFFFFFFF
+#define BLOCKCHAIN_INIT_RANDOM_DELAY 10000  // ms，为了保证各个矿机都有机会处理消息，平衡算力差别，在0～这个值之间随机休眠
+// 可以通过 `set delay 0` 屏蔽这个设置
 
 // 错误码定义
 #define BC_LINEBUF_OVERFLOW -1
@@ -32,6 +34,8 @@ int bc_input_packet(const char* buf, unsigned int len, unsigned int remip, unsig
 // need to be implemented depends on platform
 unsigned long long bc_gettime_ms(void);
 int udp_sendpacket(char* buf, unsigned int length, unsigned int remip, unsigned short remport);
+void bc_sleep_ms(unsigned int ms);
+unsigned int bc_random(unsigned int max);  // generate 1 ~ max random number
 
 // 内部函数
 int bc_handle_line(void);
@@ -50,6 +54,7 @@ extern fsm_self_t fsm_self;
 
 typedef struct {
 #define FSM_STATUS_WAIT_REPLY_CONTRAST 1
+#define FSM_STATUS_WAIT_CONFIRM_CONTRAST 2
     unsigned char status;
     short next;  // list point to next
     short prev;
